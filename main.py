@@ -12,62 +12,21 @@ import backtrader.feeds as btfeeds
 
 ASSET = argv[1]
 STAKE = float(argv[2])
-data_path = '../metatrader_connector/data/thresholds/'
-PRICES_PATH = '../data/' + ASSET + '/ticks.csv'
-
-with open(data_path + 'open_close_week_dif_mean.pickle', 'rb') as file:
-    open_close_week_dif_mean = pickle.load(file)
-with open(data_path + 'open_close_week_dif_std.pickle', 'rb') as file:
-    open_close_week_dif_std = pickle.load(file)
-
-with open(data_path + 'open_close_day_dif_mean.pickle', 'rb') as file:
-    open_close_day_dif_mean = pickle.load(file)
-with open(data_path + 'open_close_day_dif_std.pickle', 'rb') as file:
-    open_close_day_dif_std = pickle.load(file)
+data_path = '../correction_advisor/data/thresholds/'
+PRICES_PATH = '/mnt/tick_prices/' + ASSET + '.csv'
 
 with open(data_path + 'open_close_hour_dif_mean.pickle', 'rb') as file:
     open_close_hour_dif_mean = pickle.load(file)
 with open(data_path + 'open_close_hour_dif_std.pickle', 'rb') as file:
     open_close_hour_dif_std = pickle.load(file)
 
-with open(data_path + 'open_close_5min_dif_mean.pickle', 'rb') as file:
-    open_close_5min_dif_mean = pickle.load(file)
-with open(data_path + 'open_close_5min_dif_std.pickle', 'rb') as file:
-    open_close_5min_dif_std = pickle.load(file)
-
-with open(data_path + 'open_close_1min_dif_mean.pickle', 'rb') as file:
-    open_close_1min_dif_mean = pickle.load(file)
-with open(data_path + 'open_close_1min_dif_std.pickle', 'rb') as file:
-    open_close_1min_dif_std = pickle.load(file)
-
-
-# Conditions for OPEN positions
-'''THRESH_WEEK_OPEN_POSITION = (
-    open_close_week_dif_mean[ASSET] + open_close_week_dif_std[ASSET]
-)'''
-'''THRESH_DAY_OPEN_POSITION = (
-    open_close_day_dif_mean[ASSET]
-    + open_close_day_dif_std[ASSET]
-)'''
-THRESH_HOUR_OPEN_POSITION = (
-    open_close_hour_dif_mean[ASSET]
-    + 3 * open_close_hour_dif_std[ASSET]
-)
-'''THRESH_5MIN_OPEN_POSITION = (
-    open_close_5min_dif_mean[ASSET] + 3 * open_close_5min_dif_std[ASSET]
-)
-THRESH_1MIN_OPEN_POSITION = (
-    open_close_1min_dif_mean[ASSET] + 3 * open_close_1min_dif_std[ASSET]
-)'''
-
-# Conditions for CLOSE positions
+# Conditions for CLOSING positions
 TAKE_PROFIT_THRESH = (
-    open_close_5min_dif_mean[ASSET] + 3 * open_close_5min_dif_std[ASSET]
+    open_close_hour_dif_mean[ASSET]
 )
 STOP_LOSS_THRESH = (
-    open_close_5min_dif_mean[ASSET] + open_close_5min_dif_std[ASSET]
+    open_close_hour_dif_mean[ASSET]
 )
-
 
 class TestStrategy(bt.Strategy):
 
@@ -81,15 +40,12 @@ class TestStrategy(bt.Strategy):
         self.dataclose = self.datas[0].close
         self.dataopen_1min = self.datas[0].open
         self.dataopen_5min = self.datas[1].open
-        self.dataopen_hour = self.datas[2].open
-        self.dataopen_day = self.datas[3].open
-        #self.dataopen_week = self.datas[4].open
+
         # To keep track of pending orders
         self.order = None
         # Indicators
         self.rsi_1min = bt.indicators.RSI(self.datas[0])
         self.rsi_5min = bt.indicators.RSI(self.datas[1])
-        self.rsi_hour = bt.indicators.RSI(self.datas[2])
 
 
     def notify_order(self, order):
@@ -130,14 +86,14 @@ class TestStrategy(bt.Strategy):
             f'OPERATION PROFIT, GROSS {trade.pnl}, ' +
             f'NET {trade.pnlcomm}'
         )
-        with open('../data/' + ASSET + '/log.csv', 'a') as file:
+        '''with open('../data/' + ASSET + '/log.csv', 'a') as file:
             writer = csv.writer(file)
             writer.writerow(
                 [
                     self.datas[0].datetime.datetime(0), trade.pnl,
                     trade.pnlcomm, self.broker.getvalue()
                 ]
-            )
+            )'''
         print()
 
 
@@ -153,17 +109,11 @@ class TestStrategy(bt.Strategy):
         # Check if we are in the market
         if not self.position:
 
-            if self.rsi_1min[0] >= 70 and self.rsi_5min[0] >= 70 and (
-                (self.dataclose[0] - self.dataopen_hour[0]) /
-                self.dataopen_hour[0] >= THRESH_HOUR_OPEN_POSITION
-            ):
+            if self.rsi_1min[0] >= 80 and self.rsi_5min[0] >= 80:
                 # Open SHORT
                 #self.log('SELL OPENED, %.2f' % self.dataclose[0])
                 self.order = self.sell()
-            elif self.rsi_1min[0] <= 30 and self.rsi_5min[0] <= 30 and (
-                (self.dataopen_hour[0] - self.dataclose[0]) /
-                self.dataopen_hour[0] >= THRESH_HOUR_OPEN_POSITION
-            ):
+            elif self.rsi_1min[0] <= 20 and self.rsi_5min[0] <= 20:
                 # Open LONG
                 #self.log('BUY OPENED, %.2f' % self.dataclose[0])
                 self.order = self.buy()
@@ -209,31 +159,28 @@ data = btfeeds.GenericCSVData(
     dataname=PRICES_PATH,
     timeframe=bt.TimeFrame.Ticks,
     nullvalue=0.0,
-    datetime=0,
-    time=1,
-    dtformat='%Y.%m.%d',
-    tmformat='%H:%M:%S.%f',
-    high=4,
-    low=4,
-    open=4,
-    close=4,
+    datetime=1,
+    time=2,
+    dtformat='%Y-%m-%d',
+    tmformat='%H:%M:%S',
+    high=3,
+    low=3,
+    open=3,
+    close=3,
     volume=-1,
     openinterest=-1,
-    separator = '\t'
+    separator = ','
 )
 
 # Add the Data Feed to Cerebro
 cerebro.replaydata(data, timeframe=bt.TimeFrame.Minutes, compression=1)
 cerebro.replaydata(data, timeframe=bt.TimeFrame.Minutes, compression=5)
-cerebro.replaydata(data, timeframe=bt.TimeFrame.Minutes, compression=60)
-cerebro.replaydata(data, timeframe=bt.TimeFrame.Days, compression=1)
-#cerebro.replaydata(data, timeframe=bt.TimeFrame.Weeks, compression=1)
 
 # Set our desired cash start
 cerebro.broker.setcash(100000.0)
 
 # Set the commission - 0.1% ... divide by 100 to remove the %
-cerebro.broker.setcommission(commission=0.000354)
+cerebro.broker.setcommission(commission=0.0001)
 
 # Print out the starting conditions
 print('Starting Portfolio Value: %.2f' % cerebro.broker.getvalue())
