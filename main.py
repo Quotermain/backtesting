@@ -34,6 +34,7 @@ class TestStrategy(bt.Strategy):
         self.order = None
         # Indicators
         self.rsi_60min = bt.indicators.RSI(self.datas[0])
+        self.bolinger = bt.indicators.BBands(self.datas[0])
 
 
     def notify_order(self, order):
@@ -87,11 +88,11 @@ class TestStrategy(bt.Strategy):
         # Check if we are in the market
         if not self.position:
 
-            if self.rsi_60min[0] >= 80:
+            if self.rsi_60min[0] >= 70 and self.dataclose[0] > self.bolinger.top[0]:
                 # Open SHORT
                 self.log('SELL OPENED, %.2f' % self.dataclose[0])
                 self.order = self.sell()
-            elif self.rsi_60min[0] <= 20:
+            elif self.rsi_60min[0] <= 30 and self.dataclose[0] < self.bolinger.bot[0]:
                 # Open LONG
                 self.log('BUY OPENED, %.2f' % self.dataclose[0])
                 self.order = self.buy()
