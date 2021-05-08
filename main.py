@@ -2,31 +2,21 @@ from __future__ import (
     absolute_import, division, print_function, unicode_literals
 )
 
-import pickle
-from time import sleep
-import csv
-from sys import argv
-
+from utils.calculate_trade_size import calculate_trade_size
 import backtrader as bt
 import backtrader.feeds as btfeeds
+import csv
+import pickle
+from time import sleep
+from sys import argv
 
-ASSET = argv[1]
-STAKE = float(argv[2])
 data_path = '../correction_advisor/data/thresholds/'
-PRICES_PATH = '/mnt/tick_prices/' + ASSET + '.csv'
-
+with open('data/ticker_info.pickle', 'rb') as file:
+    ticker_info = pickle.load(file)
 with open(data_path + 'open_close_hour_dif_mean.pickle', 'rb') as file:
     open_close_hour_dif_mean = pickle.load(file)
 with open(data_path + 'open_close_hour_dif_std.pickle', 'rb') as file:
     open_close_hour_dif_std = pickle.load(file)
-
-# Conditions for CLOSING positions
-TAKE_PROFIT_THRESH = (
-    open_close_hour_dif_mean[ASSET]
-)
-STOP_LOSS_THRESH = (
-    open_close_hour_dif_mean[ASSET]
-)
 
 class TestStrategy(bt.Strategy):
 
@@ -38,14 +28,12 @@ class TestStrategy(bt.Strategy):
     def __init__(self):
         # Keep a reference to the "close" line in the data[0] dataseries
         self.dataclose = self.datas[0].close
-        self.dataopen_1min = self.datas[0].open
-        self.dataopen_5min = self.datas[1].open
+        self.dataopen_60min = self.datas[0].open
 
         # To keep track of pending orders
         self.order = None
         # Indicators
-        self.rsi_1min = bt.indicators.RSI(self.datas[0])
-        self.rsi_5min = bt.indicators.RSI(self.datas[1])
+        self.rsi_60min = bt.indicators.RSI(self.datas[0])
 
 
     def notify_order(self, order):
@@ -86,21 +74,11 @@ class TestStrategy(bt.Strategy):
             f'OPERATION PROFIT, GROSS {trade.pnl}, ' +
             f'NET {trade.pnlcomm}'
         )
-        '''with open('../data/' + ASSET + '/log.csv', 'a') as file:
-            writer = csv.writer(file)
-            writer.writerow(
-                [
-                    self.datas[0].datetime.datetime(0), trade.pnl,
-                    trade.pnlcomm, self.broker.getvalue()
-                ]
-            )'''
         print()
 
 
     def next(self):
         # Simply log the closing price of the series from the reference
-        #self.log('Close, %.2f' % self.dataclose[0])
-        #print(self.dataopen_hour[0])
 
         # Check if an order is pending ... if yes, we cannot send a 2nd one
         if self.order:
@@ -109,13 +87,13 @@ class TestStrategy(bt.Strategy):
         # Check if we are in the market
         if not self.position:
 
-            if self.rsi_1min[0] >= 80 and self.rsi_5min[0] >= 80:
+            if self.rsi_60min[0] >= 80:
                 # Open SHORT
-                #self.log('SELL OPENED, %.2f' % self.dataclose[0])
+                self.log('SELL OPENED, %.2f' % self.dataclose[0])
                 self.order = self.sell()
-            elif self.rsi_1min[0] <= 20 and self.rsi_5min[0] <= 20:
+            elif self.rsi_60min[0] <= 20:
                 # Open LONG
-                #self.log('BUY OPENED, %.2f' % self.dataclose[0])
+                self.log('BUY OPENED, %.2f' % self.dataclose[0])
                 self.order = self.buy()
 
         else:
@@ -129,7 +107,7 @@ class TestStrategy(bt.Strategy):
                     (self.position.price - self.dataclose[0]) /
                     self.position.price < -STOP_LOSS_THRESH
                 ):
-                    #self.log('SELL CLOSED, %.2f' % self.dataclose[0])
+                    self.log('SELL CLOSED, %.2f' % self.dataclose[0])
                     # Keep track of the created order to avoid a 2nd order
                     self.order = self.buy()
 
@@ -142,9 +120,25 @@ class TestStrategy(bt.Strategy):
                     (self.dataclose[0] - self.position.price) /
                     self.position.price < -STOP_LOSS_THRESH
                 ):
-                    #self.log('BUY CLOSED, %.2f' % self.dataclose[0])
+                    self.log('BUY CLOSED, %.2f' % self.dataclose[0])
                     # Keep track of the created order to avoid a 2nd order
                     self.order = self.sell()
+
+ASSET = argv[1]
+PRICES_PATH = '/mnt/tick_prices/' + ASSET + '.csv'
+
+# Conditions for CLOSING positions
+TAKE_PROFIT_THRESH = (
+    open_close_hour_dif_mean[ASSET] + open_close_hour_dif_std[ASSET]
+)
+STOP_LOSS_THRESH = (
+    open_close_hour_dif_mean[ASSET] + open_close_hour_dif_std[ASSET]
+)
+
+STAKE = calculate_trade_size(
+    STOP_LOSS_THRESH, ticker_info[ASSET]['close']
+)
+STAKE = round(STAKE)
 
 
 # Create a cerebro entity
@@ -173,8 +167,8 @@ data = btfeeds.GenericCSVData(
 )
 
 # Add the Data Feed to Cerebro
-cerebro.replaydata(data, timeframe=bt.TimeFrame.Minutes, compression=1)
-cerebro.replaydata(data, timeframe=bt.TimeFrame.Minutes, compression=5)
+cerebro.replaydata(data, timeframe=bt.TimeFrame.Minutes, compression=60)
+#cerebro.replaydata(data, timeframe=bt.TimeFrame.Minutes, compression=5)
 
 # Set our desired cash start
 cerebro.broker.setcash(100000.0)
@@ -190,3 +184,4 @@ cerebro.run()
 
 # Print out the final result
 print('Final Portfolio Value: %.2f' % cerebro.broker.getvalue())
+print('--' + ASSET + ' ' + str(cerebro.broker.getvalue()) + '--')
